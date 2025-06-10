@@ -6,7 +6,7 @@ All the software runs from an external disk (/mnt/newarchive)
 which gets mounted to the container at runtime. Similarly we mount the incoming directory onto
 the container so that it can access the new data as they arrive on lt-qc.
 
-This currently runs on lt-qc. Not yet a service running on the vmhost.
+Ideally run on lt-qc because it has access to /data/incoming, but the old OS causes problems building the docker image.
 
 The Classifier Model - NEEDS UPDATE
 --------------------
