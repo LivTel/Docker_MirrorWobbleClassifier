@@ -1,0 +1,7 @@
+argparse
+numpy < 2.0
+#astropy
+
+#timeit
+#numpy == 1.18.4
+#astropy >= 4.0.1

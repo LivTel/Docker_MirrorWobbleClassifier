@@ -1,0 +1,29 @@
+# compose probably has rather little real use here.
+# Probably easier just to use "docker build"
+# compose becomes more useful when the script becomes a persistent service rather than a single shot executable
+
+services:
+    mirrorwobbleclassifier:
+        build: .
+        privileged: false
+        network_mode: host
+        #entrypoint: /app/rd200_entrypoint.sh
+        container_name: mirrorwobbleclassifier
+        hostname: mirrorwobbleclassifier
+        #restart: unless-stopped
+        tty: false
+        volumes:
+           - type: bind
+             source: /mnt/newarchive1/Dockershare/Docker_MirrorWobbleClassifier
+             target: /classifier
+             read_only: false
+#       ports:
+#           - "${INFLUXDB_PORTS:-8086:8086}"
+        env_file:
+            - mirrorwobbleclassifier.env
+
+
+#  docker compose build
+#  docker compose up
+#  docker compose down
+
