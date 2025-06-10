@@ -27,8 +27,8 @@ Installation
 ------------
 On lt-qc
 ```shell
-cd /mnt/newarchive1/Dockershare/Docker_MirrorWobbleClassifier/
-git clone http://github.com/LivTel/Docker_MirrorWobbleClassifier
+cd /mnt/newarchive1/Dockershare/
+git clone https://github.com/LivTel/Docker_MirrorWobbleClassifier
 cd Docker_MirrorWobbleClassifier
 docker build -t mirrorwobbleclassifier .
 docker run -id --name running_mirrorwobbleclassifier -v /mnt/newarchive1/Dockershare/Docker_MirrorWobbleClassifier/:/classifier/ -v /data/incoming:/data/incoming  mirrorwobbleclassifier
@@ -66,4 +66,3 @@ cron script you can have problems with the runtime environment. Do not use the -
 ```shell
 docker exec -i running_mirrorwobbleclassifier python3 /classifier/app_ml.py /data/incoming/h_e_99999999_1_1_1_1_bin9.fits
 ```
-
