@@ -7,23 +7,23 @@ services:
         build: .
         privileged: false
         network_mode: host
-        #entrypoint: /app/rd200_entrypoint.sh
+        entrypoint: /app/app_ml_server.py
         container_name: mirrorwobbleclassifier
         hostname: mirrorwobbleclassifier
-        #restart: unless-stopped
+        restart: unless-stopped
         tty: false
         volumes:
            - type: bind
              source: /mnt/newarchive1/Dockershare/Docker_MirrorWobbleClassifier
              target: /classifier
              read_only: false
-#       ports:
-#           - "${INFLUXDB_PORTS:-8086:8086}"
+        ports:
+          - 8225:8225
         env_file:
             - mirrorwobbleclassifier.env
 
 
 #  docker compose build
-#  docker compose up
+#  docker compose up -d
 #  docker compose down
 

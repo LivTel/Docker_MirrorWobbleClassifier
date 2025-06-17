@@ -8,19 +8,17 @@ the container so that it can access the new data as they arrive on lt-qc.
 
 Ideally run on lt-qc because it has access to /data/incoming, but the old OS causes problems building the docker image.
 
-The Classifier Model - NEEDS UPDATE
+The Classifier Model 
 --------------------
-The classifer is based on the vgg16 CNN image classifier. It was trained on about 600 each good and bad image
-from mid 2020. The training was done using GPUs in the free online Google CoLab environment. Only the weights 
+The classifer is based on the vgg16 CNN image classifier. It was trained on about 750 each good and bad image
+from late 2024 - early 2025, eyebaalled by JMM. The training was done using GPUs in the free online Kaggle environment. 
+Only the weights 
 from the model were exported and are reimported here to use with the stock vgg16 model that is included in
 python torchvision. 
 
-The state_dict from the trained classifier is > 500Mb which seemed too large to include in teh github
+The state_dict from the trained classifier is > 500Mb which seemed too large to include in the github
 repository. The copy we are actually using is installed on lt-qc in /mnt/newarchive1/VMshare/shutterclassifier/Models.
 This needs to be backed up and maintained separatey. It is not in github.
-
-This was all written for the IOO shutter classifier, but in principal the entire system can be used with
-any other set of weights for vgg16 that have been trained to classify something else.
 
 
 Installation
