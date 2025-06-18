@@ -5,25 +5,43 @@ FROM python:3
 LABEL author="RJS <r.j.smith@ljmu.ac.uk>"
 LABEL description="Environmentin which to run vgg16 classifier for wild M1 spasms detection"
 
-# Add the working directory and temporary download space
-ENV WORKDIR=/app
-ENV DDIR=$WORKDIR/downloads
-RUN mkdir -p $DDIR
-RUN mkdir /mnt/external
-
 # Update base OS 
 RUN apt -y update
 RUN apt -y upgrade
-
-ADD . $WORKDIR
-WORKDIR $WORKDIR
-
 # "--root-user-action ignore" suppresses warning that says not to run pip as root
 RUN pip install --root-user-action ignore --upgrade pip
 
+# Add temporary download space
+#ENV DDIR=$WORKDIR/downloads
+#RUN mkdir -p $DDIR
+
+# Add the working directory
+ENV WORKDIR=/app
+#ADD . $WORKDIR			# Do not do this so early? Messes up cacheing?
+WORKDIR $WORKDIR
+
+# Where compose will mount the external persistent storage
+RUN mkdir /mnt/external
+
+
 # Install everything from requirements.txt
-#COPY requirements.txt /usr/src/app/
-RUN pip install --root-user-action ignore -r requirements.txt
+#COPY requirements.txt $WORKDIR
+#RUN pip install --root-user-action ignore -r $WORKDIR/requirements.txt
+# I prefer to pip them one at a time because when they are all wrapped in requirements.txt, Docker cannot cache images effectively
+#os
+#sys
+#argparse
+#socket
+#timeit
+# Maybe do not need <2. That was required for pylibtiff which I no longer use. Try newer numpy
+RUN pip install --root-user-action ignore "numpy<2.0"
+RUN pip install --root-user-action ignore astropy
+RUN pip install --root-user-action ignore torch
+RUN pip install --root-user-action ignore torchvision
+RUN pip install --root-user-action ignore pillow
+
+
+COPY app_ml_server.py  $WORKDIR
 
 
 # Install build tools
@@ -48,9 +66,6 @@ RUN pip install --root-user-action ignore -r requirements.txt
 #
 #RUN pip install backports.functools-lru-cache \
 
-
-#RUN pip3 install --no-cache-dir numpy
-#RUN pip3 install --no-cache-dir "numpy<2.0"
 
 #RUN pip3 install --no-cache-dir astropy
 

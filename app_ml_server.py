@@ -1,203 +1,228 @@
 # This is the shutter classifier script here as a placeholder
 # Needs updating for the mirrorwobble
 
-
 from timeit import default_timer as timer
 preImports = timer()
 
-import os, sys, argparse
-import socket 
+import os, sys, argparse, logging
+import socket, io
 import numpy as np
+from PIL import Image       # for JPG manipulation
 from astropy.io import fits
 
 import torch
 from torchvision import models
 import torch.nn as nn
 
-preArgparse = timer()
+#HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
+HOST = '0.0.0.0'
+PORT = 8225        # Port to listen on (non-privileged ports are > 1023)
+
+verbose = True
+
+debugLevel = logging.DEBUG
+#logger = logging.getLogger(__name__)
+# Log to file
+#LOGFILE = 'classifier.log'
+#logging.basicConfig(filename=LOGFILE, format='%(asctime)s : %(name)s : %(message)s', encoding='utf-8', level=debugLevel)
+# Log to STDOUT
+logging.basicConfig(level=debugLevel, stream=sys.stdout, format='%(asctime)s : %(name)s : %(message)s', encoding='utf-8')
+# Set level on per library basis
+#logging.getLogger('urllib3').setLevel(logging.WARNING)
+#logging.getLogger('botocore').setLevel(logging.WARNING)
 
 
-def server():
-    host = '0.0.0.0'
-    port = 8225
-
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
-    server_socket.listen(1)  # Listen for 1 connection
-
-    print(f"Server listening on {host}:{port}")
-
-    while True:
-        client_socket, client_address = server_socket.accept()
-        print(f"Connection from: {client_address}")
-
-        try:
-            while True:
-                data = client_socket.recv(1024) # Receive up to 1024 bytes
-                if not data:
-                    break # Client disconnected
-                print(f"Received: {data.decode()}")
-
-                #Send a response
-                client_socket.sendall("Message Received".encode())
-        except ConnectionResetError:
-            print("Client forcibly closed the connection.")
-        finally:
-            client_socket.close()
+#def server():
+#    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+#      s.bind((HOST, PORT))
+#      s.listen()
+#
+#      while True:
+#        conn, addr = s.accept()
+#        with conn:
+#          print('Connected by', addr)
+#        
+#          # Receive file size
+#          file_size_bytes = conn.recv(8)
+#          file_size = int.from_bytes(file_size_bytes, 'big')
+#
+#          # Receive image data
+#          image_data = b""
+#          while len(image_data) < file_size:
+#            chunk = conn.recv(4096)
+#            if not chunk:
+#              break
+#            image_data += chunk
+#        
+#          # Save the received image
+#          with open('received_image.jpg', 'wb') as f:
+#            f.write(image_data)
+#          print("Image received and saved as received_image.jpg")
+#
+#          #Send a response
+#          conn.sendall( "The answer is 42".encode() )
 
 
 if __name__ == '__main__':
-    server()
 
-    parser = argparse.ArgumentParser(description='Run shutter classifier on one image')
-    parser.add_argument('infile', action='store', help='File to classify, mandatory')
-    parser.add_argument('-d', dest='displayImage', action='store_true', help='Display the result as well as save FITS (default: Off)')
-    parser.add_argument('-v', dest='verbose', action='store_true', help='Turn on verbose mode (default: Off)')
-    parser.add_argument('-t', dest='timing', action='store_true', help='Turn on timing reports (default: Off)')
-    # -h is always added automatically by argparse1
-    args = parser.parse_args()
+  #
+  # Download vgg16 and modifiy for our use
+  #
+  preModel = timer()
+  logging.debug("Start loading classifier model" )
+  model = models.vgg16(weights='VGG16_Weights.DEFAULT')
 
-
-if args.verbose:
-  print (args)
-  
-if args.timing:
-  print("Imports duration = ",preArgparse-preImports,"sec")
-  print("Argparse duration = ",timer()-preArgparse,"sec")
-
-#
-# Download vgg16 and modifiy for our use
-#
-preModel = timer()
-model = models.vgg16(pretrained=True)
-#model.load_state_dict(torch.load('Models/vgg16-397923af.pth'))
-
-# Freeze model weights
-for param in model.parameters():
+  # Freeze model weights
+  for param in model.parameters():
     param.requires_grad = False
 
-n_inputs = model.classifier[6].in_features
-n_classes = 2
-model.classifier[6] = nn.Sequential(
+  n_inputs = model.classifier[6].in_features
+  n_classes = 2
+  model.classifier[6] = nn.Sequential(
                       nn.Linear(n_inputs, 256), 
                       nn.ReLU(), 
-                      nn.Dropout(0.4),
+                      nn.Dropout(0.2),                  # Why using dropout here? That is just for  training?
                       nn.Linear(256, n_classes),                   
                       nn.LogSoftmax(dim=1))
-#model.classifier
+  logging.debug(model.classifier)
 
-# Mapping class name to model index
-# This was set up in the training. Class names are not stored in the model dict.
-# You just have to know what it was trained on. 
-#
-# vgg16-transfer-touse1.pt 
-# My successful model trained in 2020 and used in all test and discussions
-# [(1, 'classBad'), (0, 'classGood')]")
-#
-# vgg16-transfer-touse2.pt
-# Retrain same model on same data with same settings on 2022-02-18
-# Ought to be effectively identical to vgg16-transfer-touse1.pt
-# [(0, 'classBad'), (1, 'classGood')]")
-#
-#model.load_state_dict(torch.load('Models/vgg16-transfer-touse1.pt'))
-#model.load_state_dict(torch.load('/TestSet/Models/vgg16-transfer-touse1.pt',map_location=torch.device('cpu')))
-model.load_state_dict(torch.load('/shutterclassifier/Models/vgg16-transfer-touse2.pt',map_location=torch.device('cpu')))
+  # These were the trained classes
+  # [(1, 'classBad'), (0, 'classGood')]")
 
-if args.timing:
-  print("Model creation duration = ",timer()-preModel,"sec")
+  # Load our model weights. Do not have these yet...
+  logging.debug("Read classifier weights from external")
+  model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250609235857.pt',map_location=torch.device('cpu')))
 
-#if args.verbose:
-#  total_params = sum(p.numel() for p in model.parameters())
-#  print(f'{total_params:,} total parameters.')
-#  total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-#  print(f'{total_trainable_params:,} training parameters.')
+  #if verbose:
+  #  total_params = sum(p.numel() for p in model.parameters())
+  #  print(f'{total_params:,} total parameters.')
+  #  total_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+  #  print(f'{total_trainable_params:,} training parameters.')
 
+  # How it was trained. Do not need to know this here. Just evaluate the model.
+  #criterion = nn.CrossEntropyLoss() 
+  #optimizer = optim.Adam(model.parameters())
 
+  logging.debug("Model creation duration = %f sec",timer()-preModel)
 
-# How it was trained. Do not need to know this here. Just evaluate the model.
-#criterion = nn.NLLLoss()
-#optimizer = optim.Adam(model.parameters())
+  # Start waiting for images to arrive on socket
+  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind((HOST, PORT))
+    s.listen()
+    if verbose:
+      print("Now waiting for JPEGs from a client")
 
-preFits = timer()
-#fitsname = "Bad/h_e_20200405_31_1_1_1_bin9.fits"
-#fitsname = "Good/h_e_20200515_40_1_1_1_bin9.fits"
-image = np.array( fits.open(args.infile, do_not_scale_image=False)[0].data, dtype=np.uint16)
-if args.verbose:
-  print("Type, Shape, Min, Max, Mean, Median, std in FITS",image.dtype, image.shape, image.min(), image.max(), image.mean(),np.median(image), image.std())
-arcsinhimage = np.arcsinh(image)
-pc = np.percentile(arcsinhimage,[0.1,1,50,90,99,100])
-if args.verbose:
-  print("pc arcsinhimage= ",pc)
-black = pc[0]
-white = pc[4]
-image_norm8 = np.array( (np.clip(arcsinhimage,black,white) - black) * (255.000 / (white-black))  , dtype=np.uint8)
-if args.verbose:
-  print("Type, Shape, Min, Max, Mean, Median, std in Norm",image_norm8.dtype, image_norm8.shape, image_norm8.min(), image_norm8.max(), image_norm8.mean(),np.median(image_norm8), image_norm8.std())
+    while True:
 
-# Centre Crop
-naxis1 = image_norm8.shape[1]
-naxis2 = image_norm8.shape[0]
-trim_left = int(np.floor((naxis1 - 224 ) / 2))
-trim_top = int(np.floor((naxis2 - 224 ) / 2))
-if args.verbose:
-  print("[process_image] gutter = ",trim_left, trim_top)
-image_norm8 = image_norm8[trim_top:trim_top+224,trim_left:trim_left+224]
-if args.verbose:
-  print(image_norm8.shape)
+      conn, addr = s.accept()
+      with conn:
+        preImageXfer = timer()
+        logging.info('Connected by %s', addr)
+        
+        # Receive file size
+        file_size_bytes = conn.recv(8)
+        file_size = int.from_bytes(file_size_bytes, 'big')
+        logging.debug('Filesize %ld', file_size)
 
-# In the colab workbook I scaled to unity (0...1). 
-# Note that torchvision transforms.ToTensor() does this automatically (in some cases!) 
-# when loading tehimages into the trainer. Here we are just duplicating how
-# the images were processed by transforms() for the the trainer.
-# The name norm8 is a bit silly now. It is now a floating point, not 8bit int.
-image_norm8 = image_norm8 / 255.0
-if args.verbose:
-  print("Type, Shape, Min, Max, Mean, Median, std in Norm",image_norm8.dtype, image_norm8.shape, image_norm8.min(), image_norm8.max(), image_norm8.mean(),np.median(image_norm8), image_norm8.std())
+        # Receive image data
+        image_data = b""
+        while len(image_data) < file_size:
+          chunk = conn.recv(4096)
+          if not chunk:
+            break
+          image_data += chunk
+          #logging.debug('Read %d chunk. Total so far got %ld', len(chunk), len(image_data))
 
-# Do nothing standardization
-means = np.array([0.0, 0.0, 0.0]).reshape((3, 1, 1))
-stds = np.array([1.00, 1.00, 1.00]).reshape((3, 1, 1))
+        logging.debug("JPG size %d",len(image_data))
 
-image_3layer = (image_norm8 - means) / stds
-if args.verbose:
-  print(image_3layer.shape)
+        image_stream = io.BytesIO(image_data)
+        img = Image.open(image_stream)
+        print(img)
+        logging.debug('PIL image object: %s', img)
+        
+        # Save the received image
+        #with open('received_image.jpg', 'wb') as f:
+        #  f.write(image_data)
+        #print("Image received and saved as received_image.jpg")
 
-# Note we are here in 3*X*Y, like a tensor, not X*Y*3 like an image
-if args.verbose:
-  print("Mean in three layers of RGB (a)",image_3layer[0].mean(), image_3layer[1].mean(), image_3layer[2].mean())
-  print("Std in three layers of RGB (a)",image_3layer[0].std(), image_3layer[1].std(), image_3layer[2].std())
+        img_rgb = img.convert('RGB')
+        rgb_array = np.array(img_rgb)
 
-image_tensor = torch.Tensor(image_3layer)
+        # Now have image as byte array in image_data
+        # Need to copy it into an RGB array
+        print(rgb_array.shape)
+        logging.debug("numpy array shape: %s",rgb_array.shape)
+        # numpy array shape: (2056, 2048, 3)
 
-if args.verbose:
-  print("predict, tensor shape = ",image_tensor.shape)
+        logging.debug("Image transfer duration = %f sec",timer()-preImageXfer)
 
-image_tensor = image_tensor.view(1, 3, 224, 224)
+        preImageProc = timer()
+        # On the shutter classifer this required binning, scaling and conversion to tiff.
+        # This is much simpler. We cannot bin becise it loses too much detail and JMM has already done the scale and conversion to JPEG for us.
 
-if args.timing:
-  print("FITS handling duration = ",timer()-preFits,"sec")
+        # Centre Crop
+        # Shutter Classifier used a centre crop. We could use a random crop here, but first attempt is no crop at all
+        #naxis1 = image_norm8.shape[1]
+        #naxis2 = image_norm8.shape[0]
+        #trim_left = int(np.floor((naxis1 - 224 ) / 2))
+        #trim_top = int(np.floor((naxis2 - 224 ) / 2))
+        #if verbose:
+        #  print("[process_image] gutter = ",trim_left, trim_top)
+        #image_norm8 = image_norm8[trim_top:trim_top+224,trim_left:trim_left+224]
+        #if verbose:
+        #  print(image_norm8.shape)
 
-preClassifier = timer()
+        # For training I scaled to unity (0...1) as floats. 
+        # Note that torchvision transforms.ToTensor() does this automatically (in some cases!) when loading the images into the trainer. Here we are just duplicating how
+        # the images were processed by transforms() for the the trainer.
+        rgb_array = (rgb_array / 255.0).astype(np.float32)
+        #if verbose:
+        #  print("Type, Shape, Min, Max, Mean, Median, std in Norm",image_norm8.dtype, image_norm8.shape, image_norm8.min(), image_norm8.max(), image_norm8.mean(),np.median(image_norm8), image_norm8.std())
 
-with torch.no_grad():
-        model.eval()
-        # Model outputs log probabilities
-        out = model(image_tensor)
-        ps = torch.exp(out)
-        topk, topclass = ps.topk(2)
-        if args.verbose:
-          print("out is ",out)
-          print("ps is",ps)
-          print("topk is",topk)
-          print("topclass is",topclass)
+        # Do nothing standardization
+        #means = np.array([0.0, 0.0, 0.0]).reshape((3, 1, 1))
+        #stds = np.array([1.00, 1.00, 1.00]).reshape((3, 1, 1))
+        #image_3layer = (image_norm8 - means) / stds
+        image_3layer = rgb_array
+        logging.debug("image_3layer.shape: %s", image_3layer.shape)
 
-if args.timing:
-  print("Classifier duration = ",timer()-preClassifier,"sec")
+        # Currently an X*Y*3 like an image
+        logging.debug("Mean in three layers of RGB %f %f %f",image_3layer[:,:,0].mean(), image_3layer[:,:,1].mean(), image_3layer[:,:,2].mean())
+        logging.debug("Std in three layers of RGB %f %f %f",image_3layer[:,:,0].std(), image_3layer[:,:,1].std(), image_3layer[:,:,2].std())
 
-if int(topclass[0][0]):
-  className = "OK"
-else:
-  className = "Shutter"
+        # Torch needs us to reshape the array to 3*X*Y for th etensor (not X*Y*3 like an image)
+        image_tensor = torch.from_numpy(image_3layer).permute(2, 0, 1)
+        logging.debug("tensor shape: %s",image_tensor.shape)
 
-print(int(topclass[0][0]),np.round(float(topk[0][0]),3), className, args.infile)
+        # Convert from a single tensor to an array of 1 tensor!
+        image_tensor = image_tensor.view(1, image_tensor.shape[0], image_tensor.shape[1], image_tensor.shape[2])
+        logging.debug("tensor shape: %s",image_tensor.shape)
 
+        logging.debug("Image handling duration = %f sec",timer()-preImageProc)
+
+        preClassifier = timer()
+
+        with torch.no_grad():
+          model.eval()
+          # Model outputs log probabilities
+          out = model(image_tensor)
+          ps = torch.exp(out)
+          topk, topclass = ps.topk(2)
+          logging.debug("out is %f",out)
+          logging.debug("ps is %f",ps)
+          logging.debug("topk is %f",topk)
+          logging.debug("topclass is %d",topclass)
+
+        logging.debug("Classifier duration = %f sec",timer()-preClassifier)
+
+        if int(topclass[0][0]):
+          className = "OK"
+        else:
+          className = "Wobble"
+      
+        print( int(topclass[0][0]), np.round(float(topk[0][0]),3), className)
+
+        #Send a response
+        conn.sendall( (className+" "+str(np.round(float(topk[0][0]),3)) ).encode() )
+        #conn.sendall( str(np.round(float(topk[0][0]),3)).encode() )
+        #conn.sendall( className.encode() )

@@ -7,15 +7,16 @@ services:
         build: .
         privileged: false
         network_mode: host
-        entrypoint: /app/app_ml_server.py
+        # -u makes STDOUT unbuffered
+        entrypoint: python3 -u /app/app_ml_server.py
         container_name: mirrorwobbleclassifier
         hostname: mirrorwobbleclassifier
         restart: unless-stopped
         tty: false
         volumes:
            - type: bind
-             source: /mnt/newarchive1/Dockershare/Docker_MirrorWobbleClassifier
-             target: /classifier
+             source: /mnt/Dockershare/mirrorwobbleclassifier
+             target: /mnt/external
              read_only: false
         ports:
           - 8225:8225
