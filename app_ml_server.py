@@ -81,7 +81,7 @@ if __name__ == '__main__':
   model.classifier[6] = nn.Sequential(
                       nn.Linear(n_inputs, 256), 
                       nn.ReLU(), 
-                      nn.Dropout(0.2),                  # Why using dropout here? That is just for  training?
+                      nn.Dropout(0.2),                  # Will be turned off when we call model.eval()
                       nn.Linear(256, n_classes),                   
                       nn.LogSoftmax(dim=1))
   logging.debug(model.classifier)
@@ -202,7 +202,9 @@ if __name__ == '__main__':
 
         preClassifier = timer()
 
+        # no_grad() tells it not to bother calculating the gradients. We do not need them for need evaluation, only training.
         with torch.no_grad():
+          # Place in evaluate mode, disables DropOut and other training features.
           model.eval()
           # Model outputs log probabilities
           out = model(image_tensor)
