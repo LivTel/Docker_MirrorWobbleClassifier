@@ -20,6 +20,9 @@ PORT = 8225        # Port to listen on (non-privileged ports are > 1023)
 
 verbose = True
 
+# Confidence required to accept a "Wobble" classification. Low confidence Wobbles are called OK
+decisionThreshold = 0.6
+
 debugLevel = logging.DEBUG
 #logger = logging.getLogger(__name__)
 # Log to file
@@ -81,17 +84,19 @@ if __name__ == '__main__':
   model.classifier[6] = nn.Sequential(
                       nn.Linear(n_inputs, 256), 
                       nn.ReLU(), 
-                      nn.Dropout(0.2),                  # Will be turned off when we call model.eval()
+                      nn.Dropout(0.5),                  # Will be turned off when we call model.eval()
                       nn.Linear(256, n_classes),                   
                       nn.LogSoftmax(dim=1))
   logging.debug(model.classifier)
 
   # These were the trained classes
   # [(1, 'classBad'), (0, 'classGood')]")
+  classes = ["Wobble", "OK"]
 
   # Load our model weights. Do not have these yet...
   logging.debug("Read classifier weights from external")
-  model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250609235857.pt',map_location=torch.device('cpu')))
+  #model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250609235857.pt',map_location=torch.device('cpu')))
+  model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250624013305.pt',map_location=torch.device('cpu')))
 
   #if verbose:
   #  total_params = sum(p.numel() for p in model.parameters())
@@ -137,22 +142,20 @@ if __name__ == '__main__':
 
         image_stream = io.BytesIO(image_data)
         img = Image.open(image_stream)
-        print(img)
+        logging.debug(img.info)
         logging.debug('PIL image object: %s', img)
         
         # Save the received image
         #with open('received_image.jpg', 'wb') as f:
         #  f.write(image_data)
+        # Successfully tested that img is a good image.
+        #img.save('received_image.jpg')
         #print("Image received and saved as received_image.jpg")
 
         img_rgb = img.convert('RGB')
         rgb_array = np.array(img_rgb)
-
-        # Now have image as byte array in image_data
         # Need to copy it into an RGB array
-        print(rgb_array.shape)
         logging.debug("numpy array shape: %s",rgb_array.shape)
-        # numpy array shape: (2056, 2048, 3)
 
         logging.debug("Image transfer duration = %f sec",timer()-preImageXfer)
 
@@ -160,24 +163,11 @@ if __name__ == '__main__':
         # On the shutter classifer this required binning, scaling and conversion to tiff.
         # This is much simpler. We cannot bin becise it loses too much detail and JMM has already done the scale and conversion to JPEG for us.
 
-        # Centre Crop
-        # Shutter Classifier used a centre crop. We could use a random crop here, but first attempt is no crop at all
-        #naxis1 = image_norm8.shape[1]
-        #naxis2 = image_norm8.shape[0]
-        #trim_left = int(np.floor((naxis1 - 224 ) / 2))
-        #trim_top = int(np.floor((naxis2 - 224 ) / 2))
-        #if verbose:
-        #  print("[process_image] gutter = ",trim_left, trim_top)
-        #image_norm8 = image_norm8[trim_top:trim_top+224,trim_left:trim_left+224]
-        #if verbose:
-        #  print(image_norm8.shape)
-
         # For training I scaled to unity (0...1) as floats. 
         # Note that torchvision transforms.ToTensor() does this automatically (in some cases!) when loading the images into the trainer. Here we are just duplicating how
         # the images were processed by transforms() for the the trainer.
         rgb_array = (rgb_array / 255.0).astype(np.float32)
-        #if verbose:
-        #  print("Type, Shape, Min, Max, Mean, Median, std in Norm",image_norm8.dtype, image_norm8.shape, image_norm8.min(), image_norm8.max(), image_norm8.mean(),np.median(image_norm8), image_norm8.std())
+        logging.debug("Type, Shape, Min, Max, Mean, Median, std in Norm %s %s %f %f %f %f %f",rgb_array.dtype, rgb_array.shape, rgb_array.min(), rgb_array.max(), rgb_array.mean(),np.median(rgb_array), rgb_array.std())
 
         # Do nothing standardization
         #means = np.array([0.0, 0.0, 0.0]).reshape((3, 1, 1))
@@ -189,8 +179,9 @@ if __name__ == '__main__':
         # Currently an X*Y*3 like an image
         logging.debug("Mean in three layers of RGB %f %f %f",image_3layer[:,:,0].mean(), image_3layer[:,:,1].mean(), image_3layer[:,:,2].mean())
         logging.debug("Std in three layers of RGB %f %f %f",image_3layer[:,:,0].std(), image_3layer[:,:,1].std(), image_3layer[:,:,2].std())
+        # All numbers are identical to those I get in kaggle, so the data are read and handled correctly
 
-        # Torch needs us to reshape the array to 3*X*Y for th etensor (not X*Y*3 like an image)
+        # Torch needs us to reshape the array to 3*X*Y for the tensor (not X*Y*3 like an image)
         image_tensor = torch.from_numpy(image_3layer).permute(2, 0, 1)
         logging.debug("tensor shape: %s",image_tensor.shape)
 
@@ -209,22 +200,26 @@ if __name__ == '__main__':
           # Model outputs log probabilities
           out = model(image_tensor)
           ps = torch.exp(out)
-          topk, topclass = ps.topk(2)
-          logging.debug("out is %f",out)
-          logging.debug("ps is %f",ps)
-          logging.debug("topk is %f",topk)
-          logging.debug("topclass is %d",topclass)
+          to_p, to_class = ps.topk(2, largest=True, sorted=True)       # Get the N largest probabilities
+          best_p = to_p.numpy()[0]
+          best_class = to_class.numpy()[0]
 
         logging.debug("Classifier duration = %f sec",timer()-preClassifier)
 
-        if int(topclass[0][0]):
-          className = "OK"
-        else:
-          className = "Wobble"
-      
-        print( int(topclass[0][0]), np.round(float(topk[0][0]),3), className)
+        #print(to_p)
+        #print(to_class)
+        logging.debug("P %f, Class %d",best_p, best_class)
+
+        # Provisional decision is the best probability
+        decision = classes[best_class[0]]
+
+        # But is the bad confidence is below threshold, default to OK
+        if decision == "Wobble" and best_p[0] < decisionThreshold :
+          decision = "OK"
+
+        logging.debug("Highest prob = %s, Final = %s", classes[best_class[0]], decision)
+
+        #print( best_class[0], np.round(best_p[0],3), decision)
 
         #Send a response
-        conn.sendall( (className+" "+str(np.round(float(topk[0][0]),3)) ).encode() )
-        #conn.sendall( str(np.round(float(topk[0][0]),3)).encode() )
-        #conn.sendall( className.encode() )
+        conn.sendall( (decision+" "+str(np.round(best_p[0],3)) ).encode() )
