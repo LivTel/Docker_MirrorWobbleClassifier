@@ -1,14 +1,23 @@
-# This is the shutter classifier script here as a placeholder
-# Needs updating for the mirrorwobble
-
 from timeit import default_timer as timer
 preImports = timer()
 
 import os, sys, argparse, logging
+
+debugLevel = logging.DEBUG
+LOGFILE = '/mnt/external/classifier.log'
+logging.basicConfig(level=debugLevel, filename=LOGFILE, format='%(asctime)s : %(name)s : %(message)s', encoding='utf-8')
+# Log to STDOUT
+#logging.basicConfig(level=debugLevel, stream=sys.stdout, format='%(asctime)s : %(name)s : %(message)s', encoding='utf-8')
+# Set level on per library basis
+#logging.getLogger('urllib3').setLevel(logging.WARNING)
+#logging.getLogger('botocore').setLevel(logging.WARNING)
+  
+
+
 import socket, io
 import numpy as np
 from PIL import Image       # for JPG manipulation
-from astropy.io import fits
+#from astropy.io import fits
 
 import torch
 from torchvision import models
@@ -96,7 +105,12 @@ if __name__ == '__main__':
   # Load our model weights. Do not have these yet...
   logging.debug("Read classifier weights from external")
   #model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250609235857.pt',map_location=torch.device('cpu')))
-  model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250624013305.pt',map_location=torch.device('cpu')))
+  #model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250624013305.pt',map_location=torch.device('cpu')))
+  #model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250627020015.pt',map_location=torch.device('cpu')))   # Model with most testing so far. Kaggle
+
+  #fails model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250708T160639.pth',map_location=torch.device('cpu')))   # First Prospero test
+  #torch.load('/mnt/external/Models/vgg16-transfer-wobble-20250708T160639.pth',map_location=torch.device('cpu'),weights_only=False)   # First Prospero test
+  model.load_state_dict(torch.load('/mnt/external/Models/vgg16-transfer-wobble-nll-20250708T211850.pt',map_location=torch.device('cpu')))  
 
   #if verbose:
   #  total_params = sum(p.numel() for p in model.parameters())
@@ -206,20 +220,19 @@ if __name__ == '__main__':
 
         logging.debug("Classifier duration = %f sec",timer()-preClassifier)
 
-        #print(to_p)
-        #print(to_class)
-        logging.debug("P %f, Class %d",best_p, best_class)
+        logging.debug("P %f, Class %d",best_p[0], best_class[0])
 
-        # Provisional decision is the best probability
+        # Provisional decision is the best (first) probability
         decision = classes[best_class[0]]
+        decision_prob = best_p[0]
 
-        # But is the bad confidence is below threshold, default to OK
+        # But if the bad confidence is below threshold, default to OK and we need the associated probabilty
         if decision == "Wobble" and best_p[0] < decisionThreshold :
           decision = "OK"
+          decision_prob = best_p[0]
 
-        logging.debug("Highest prob = %s, Final = %s", classes[best_class[0]], decision)
 
-        #print( best_class[0], np.round(best_p[0],3), decision)
+        logging.info("Highest prob = %s (%f), Final decision = %s (%f)", classes[best_class[0]], best_p[0], decision, decision_prob)
 
         #Send a response
-        conn.sendall( (decision+" "+str(np.round(best_p[0],3)) ).encode() )
+        conn.sendall( (decision+" "+str(np.round(decision_prob,3)) ).encode() )
